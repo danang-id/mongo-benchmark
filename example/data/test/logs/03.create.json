@@ -1,0 +1,7 @@
+{
+    "service": "ssh",
+    "source_ip": "172.20.10.1",
+    "destination_ip": "172.20.10.2",
+    "accessor": "user",
+    "accessor_id": 2
+}

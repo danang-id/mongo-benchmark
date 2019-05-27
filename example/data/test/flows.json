@@ -1,0 +1,17 @@
+{
+    "collections": {
+        "logs": {
+            "service": {
+                "refCollection": "services",
+                "findOne": {
+                    "name": "{value}"
+                }
+             },
+            "accessor": {
+                "refCollection": "{value}s",
+                "findById": "{row.accessor_id}"
+             }
+        }
+    },
+    "readOtherCollections": false
+ }
