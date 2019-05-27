@@ -1,2 +1,6 @@
 !benchmark.config.json
 !data
+createResult
+readResult
+updateResult
+deleteResult
