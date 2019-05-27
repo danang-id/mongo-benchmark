@@ -1,0 +1,45 @@
+{
+  "name": "mongo-benchmark",
+  "version": "0.1.0",
+  "description": "General CRUD Benchmark for MongoDB",
+  "main": "bin/mongobenchmark",
+  "repository": "git@github.com:danang-id/mongo-benchmark.git",
+  "author": "Danang Galuh Tegar Prasetyo <danang.galuh.t@gmail.com> (https://github.com/danang-id)",
+  "license": "Apache-2.0",
+  "private": true,
+  "scripts": {
+    "lint": "tsc",
+    "prettier": "prettier --write lib/*.ts lib/**/*.ts",
+    "dev": "ts-node lib/main.ts",
+    "build": "rollup -c && ts-node script/postRollup.ts",
+    "start": "node bin/mongobenchmark",
+    "dist": "npm run build && npm run dist:linux && npm run dist:win",
+    "dist:linux": "pkg --targets node10-linux --output dist/mongobenchmark-linux64 bin/mongobenchmark",
+    "dist:macos": "pkg --targets node10-macos --output dist/mongobenchmark-macos bin/mongobenchmark",
+    "dist:win": "npm run dist:win32 && npm run dist:win64",
+    "dist:win32": "pkg --targets node10-win-x86 --output dist/mongobenchmark-win32 bin/mongobenchmark",
+    "dist:win64": "pkg --targets node10-win-x64 --output dist/mongobenchmark-win64 bin/mongobenchmark"
+  },
+  "dependencies": {
+    "chalk": "^2.4.2",
+    "commander": "^2.20.0",
+    "mongodb": "^3.2.4",
+    "tslib": "^1.9.3"
+  },
+  "devDependencies": {
+    "@types/chalk": "^2.2.0",
+    "@types/commander": "^2.12.2",
+    "@types/fs-extra": "^7.0.0",
+    "@types/mongodb": "^3.1.27",
+    "@types/node": "^11.13.7",
+    "fs-extra": "^8.0.1",
+    "pkg": "^4.4.0",
+    "prettier": "^1.17.1",
+    "rollup": "^1.10.1",
+    "rollup-plugin-commonjs": "^9.3.4",
+    "rollup-plugin-json": "^4.0.0",
+    "rollup-plugin-typescript": "^1.0.1",
+    "ts-node": "^8.1.0",
+    "typescript": "^3.4.5"
+  }
+}

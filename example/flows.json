@@ -1,0 +1,18 @@
+{
+    "collections": {
+        "logs": {
+            "ref_one": {
+                "refCollection": "collection_{value}",
+                "findById": "{row.ref_id}"
+            },
+            "ref_two": {
+                "refCollection": "collection_{value}",
+                "findOne": {
+                    "id": "{row.ref_id}"
+                }
+            }
+        },
+        "services": {}
+    },
+    "readOtherCollections": false
+}

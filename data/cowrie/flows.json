@@ -1,0 +1,11 @@
+{
+    "collections": {
+        "connections": {
+            "ref": {
+                "refCollection": "{value}",
+                "findById": "{row.ref_id}"
+            }
+        }
+    },
+    "readOtherCollections": true
+}
