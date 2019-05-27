@@ -15,21 +15,23 @@
 
 import fs from 'fs-extra'
 import path from 'path'
+import { EventEmitter } from 'events'
 
 import DatabaseService from './Database'
+import { DatabaseEvent } from './Database'
 import Flows from '../helpers/flows'
-import { styles, terminal } from '../helpers/terminal'
 
-class DatabaseBenchmark {
+class DatabaseBenchmark extends EventEmitter{
 	private readonly DATABASE_NAME: string
 	private readonly DATABASE_SERVICE: DatabaseService
 	private readonly DATABASE_DIRECTORY: fs.PathLike
 
 	private readonly flowsConfig: Flows
 	private readonly benchmarkResults: IBenchmarkResults
-	private readonly writenResults: string[]
+	private readonly writtenResults: string[]
 
 	constructor(dataDirectory: string, databaseName: string) {
+		super()
 		this.DATABASE_NAME = databaseName
 		this.DATABASE_SERVICE = new DatabaseService(this.DATABASE_NAME)
 		this.DATABASE_DIRECTORY = path.join(dataDirectory, this.DATABASE_NAME)
@@ -39,9 +41,13 @@ class DatabaseBenchmark {
 			read: {},
 			update: {},
 			delete: {},
-			isFinished: false
+			isFinished: false,
+			hasFlowsConfig: this.flowsConfig.hasFlowsJSON
 		}
-		this.writenResults = []
+		this.writtenResults = []
+		this.addDatabaseServiceEventListener(DatabaseEvent.error, (error: Error) => {
+			this.emit(DatabaseBenchmarkEvent.benchmarkError, error)
+		})
 	}
 
 	private isCollectionDirectory(_path: fs.PathLike) {
@@ -206,18 +212,7 @@ class DatabaseBenchmark {
 		}
 	}
 
-	private writeResultToFile(collection: string, result: string, filename: string, resultData: { [key: string]: any }) {
-		const resultPath = path.join(<string>this.DATABASE_DIRECTORY, collection, result)
-		if (this.writenResults.findIndex(r => r === result) === -1) {
-			if (fs.existsSync(resultPath)) {
-				fs.removeSync(resultPath)
-			}
-			fs.mkdirSync(resultPath)
-			this.writenResults.push(result)
-		}
-		const resultFilePath = path.join(resultPath, `${filename}.json`)
-		fs.writeFileSync(resultFilePath, JSON.stringify(resultData))
-	}
+
 
 	private async runCreateBenchmark(
 		benchmarkRequest: ICreateBenchmarkRequest
@@ -239,7 +234,7 @@ class DatabaseBenchmark {
 						} = await this.DATABASE_SERVICE.create(collection, data)
 						if (result.ok) {
 							const hrEnd = process.hrtime(hrStart)
-							this.writeResultToFile(collection, 'createResult', String(insertedId), result)
+							this.emit(DatabaseBenchmarkEvent.operationDone, collection, 'createResult', String(insertedId), result)
 							benchmarkResult[collection].push({
 								hrtime: hrEnd,
 								data: data,
@@ -316,7 +311,7 @@ class DatabaseBenchmark {
 									}
 								}
 							}
-							this.writeResultToFile(collection, 'readResult', String(id), dataContent)
+							this.emit(DatabaseBenchmarkEvent.operationDone, collection, 'readResult', String(id), dataContent)
 							benchmarkResult[collection].push({
 								hrtime: hrEnd,
 								data: dataContent,
@@ -353,7 +348,7 @@ class DatabaseBenchmark {
 						)
 						if (result.ok) {
 							const hrEnd = process.hrtime(hrStart)
-							this.writeResultToFile(collection, 'updateResult', String(id), result)
+							this.emit(DatabaseBenchmarkEvent.operationDone, collection, 'updateResult', String(id), result)
 							benchmarkResult[collection].push({
 								hrtime: hrEnd,
 								data: data,
@@ -392,7 +387,7 @@ class DatabaseBenchmark {
 						)
 						if (result.ok) {
 							const hrEnd = process.hrtime(hrStart)
-							this.writeResultToFile(collection, 'deleteResult', String(id), result)
+							this.emit(DatabaseBenchmarkEvent.operationDone, collection, 'deleteResult', String(id), result)
 							benchmarkResult[collection].push({
 								hrtime: hrEnd,
 								data: {},
@@ -412,24 +407,18 @@ class DatabaseBenchmark {
 		}
 	}
 
-	public async runBenchmark() {
+	private async runBenchmarkPromise() {
 		if (this.benchmarkResults.isFinished) {
-			throw new Error(
+			this.emit(DatabaseBenchmarkEvent.benchmarkError, new Error(
 				'Benchmark for database [' +
-					this.DATABASE_NAME +
-					'] has already done.'
-			)
+				this.DATABASE_NAME +
+				'] has already done.'
+			))
 		}
 		try {
-			terminal.printLine(
-				'Running benchmark for database [' + this.DATABASE_NAME + ']...'
-			)
-			terminal.printLine('DB_DIR: ' + this.DATABASE_DIRECTORY)
+			this.emit(DatabaseBenchmarkEvent.benchmarkStart, this.DATABASE_DIRECTORY, this.flowsConfig.hasFlowsJSON)
 			if (this.flowsConfig.hasFlowsJSON) {
 				this.flowsConfig.loadFlowsConfig()
-				terminal.printLine('INFO: This database has a "flows.json" config. Operation will be based on this config.')
-			} else {
-				terminal.printLine('INFO: This database has no "flows.json" config.')
 			}
 			// Initialise benchmark requests and results object
 			const benchmarkRequests: IBenchmarkRequests = {
@@ -440,11 +429,9 @@ class DatabaseBenchmark {
 			}
 			// Check if there is any collection
 			if (this.getCollections().length <= 0) {
-				terminal.printLine(
-					'No collections found in DB_DIR for database [' +
-						this.DATABASE_NAME +
-						'].',
-					styles.red
+				this.emit(
+					DatabaseBenchmarkEvent.benchmarkError,
+					new Error('No collections found in DB_DIR for database [' + this.DATABASE_NAME + '].')
 				)
 				return
 			}
@@ -456,11 +443,9 @@ class DatabaseBenchmark {
 				}
 			}
 			if (noDataAtAll) {
-				terminal.printLine(
-					'No data file found in all collections in DB_DIR for database [' +
-						this.DATABASE_NAME +
-						'].',
-					styles.red
+				this.emit(
+					DatabaseBenchmarkEvent.benchmarkError,
+					new Error('No data file found in all collections in DB_DIR for database [' + this.DATABASE_NAME + '].')
 				)
 				return
 			}
@@ -535,32 +520,57 @@ class DatabaseBenchmark {
 			// Set benchmark results as finished and return it
 			this.benchmarkResults.isFinished = true
 		} catch (error) {
-			throw error
+			this.emit(DatabaseBenchmarkEvent.benchmarkError, error)
 		} finally {
 			await this.DATABASE_SERVICE.disconnect()
 		}
 	}
 
+	public runBenchmark() {
+		this.runBenchmarkPromise().then(() => {
+			this.emit(DatabaseBenchmarkEvent.benchmarkDone)
+		})
+	}
+
 	public finishBenchmark() {
+		const benchmarkResultsFile = path.join(<string>this.DATABASE_DIRECTORY, 'BenchmarkResults.json')
 		if (this.benchmarkResults.isFinished) {
-			terminal.printLine(
-				'Benchmark for database [' +
-					this.DATABASE_NAME +
-					'] has been successfully completed.'
-			)
+			this.emit(DatabaseBenchmarkEvent.benchmarkFinish, true, this.benchmarkResults, benchmarkResultsFile)
 		} else {
 			this.benchmarkResults.isFinished = true
-			terminal.printLine(
-				'Benchmark for database [' +
-					this.DATABASE_NAME +
-					'] is ended with error.'
-			)
+			this.emit(DatabaseBenchmarkEvent.benchmarkFinish, false, this.benchmarkResults, benchmarkResultsFile)
 		}
 	}
 
 	public getBenchmarkResults(): IBenchmarkResults {
 		return this.benchmarkResults
 	}
+
+	public writeResultToFile(collection: string, result: string, filename: string, resultData: { [key: string]: any }) {
+		const resultPath = path.join(<string>this.DATABASE_DIRECTORY, collection, result)
+		if (this.writtenResults.findIndex(r => r === resultPath) === -1) {
+			if (fs.existsSync(resultPath)) {
+				fs.removeSync(resultPath)
+			}
+			fs.mkdirSync(resultPath)
+			this.writtenResults.push(resultPath)
+		}
+		const resultFilePath = path.join(resultPath, `${filename}.json`)
+		fs.writeFileSync(resultFilePath, JSON.stringify(resultData))
+	}
+
+	public addDatabaseServiceEventListener(event: string | symbol, listener: (...args: any[]) => void) {
+		this.DATABASE_SERVICE.addListener(event, listener)
+		return this
+	}
+}
+
+export enum DatabaseBenchmarkEvent {
+	benchmarkStart = 'start',
+	benchmarkDone = 'done',
+	benchmarkFinish = 'finish',
+	benchmarkError = 'error',
+	operationDone = 'operationDone'
 }
 
 export interface ICollectionDataSet {
@@ -631,6 +641,7 @@ export interface IBenchmarkResults {
 	update: IBenchmarkResult
 	delete: IBenchmarkResult
 	isFinished: boolean
+	hasFlowsConfig: boolean
 }
 
 export default DatabaseBenchmark

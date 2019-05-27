@@ -16,15 +16,16 @@
 import mongodb from 'mongodb'
 
 import config from './../helpers/config'
-import { terminal } from './../helpers/terminal'
+import { EventEmitter } from 'events'
 
-export class Database {
+export class Database extends EventEmitter{
 	private readonly DB_URI_STRING: string
 	private readonly DB_NAME: string
 	private client?: mongodb.MongoClient
 	private database?: mongodb.Db
 
 	constructor(databaseName: string) {
+		super()
 		this.DB_URI_STRING = config.isLoaded ? config.database.uriString : ''
 		this.DB_NAME = databaseName
 	}
@@ -32,15 +33,15 @@ export class Database {
 	public async connect() {
 		try {
 			if (this.client === void 0 || this.database === void 0) {
-				terminal.print('Connecting to database [' + this.DB_NAME + ']...')
+				this.emit(DatabaseEvent.connect)
 				this.client = await mongodb.connect(this.DB_URI_STRING, {
 					useNewUrlParser: true
 				})
 				this.database = this.client.db(this.DB_NAME)
-				terminal.printLine(' CONNECTED!')
+				this.emit(DatabaseEvent.connected)
 			}
 		} catch (error) {
-			terminal.printLine(' FAILED!')
+			this.emit(DatabaseEvent.error, error)
 			throw error
 		}
 	}
@@ -48,21 +49,23 @@ export class Database {
 	public async disconnect() {
 		try {
 			if (this.client !== void 0 && this.database !== void 0) {
-				terminal.print('Closing connection to database...')
+				this.emit(DatabaseEvent.disconnect)
 				await this.client.close()
 				this.client = void 0
 				this.database = void 0
-				terminal.printLine(' DONE!')
+				this.emit(DatabaseEvent.disconnected)
 			}
 		} catch (error) {
-			terminal.printLine(' FAILED!')
+			this.emit(DatabaseEvent.error, error)
 			throw error
 		}
 	}
 
 	public async startTransaction() {
 		if (this.client === void 0 || this.database === void 0) {
-			throw new Error('Database is not connected!')
+			const error = new Error('Database is not connected!')
+			this.emit(DatabaseEvent.error, error)
+			throw error
 		}
 		const session = this.client.startSession()
 		session.startTransaction()
@@ -81,7 +84,9 @@ export class Database {
 
 	public async drop() {
 		if (this.client === void 0 || this.database === void 0) {
-			throw new Error('Database is not connected!')
+			const error = new Error('Database is not connected!')
+			this.emit(DatabaseEvent.error, error)
+			throw error
 		}
 		return this.database.dropDatabase()
 	}
@@ -91,12 +96,15 @@ export class Database {
 		dataContent: { [key: string]: any }
 	) {
 		if (this.client === void 0 || this.database === void 0) {
-			throw new Error('Database is not connected!')
+			const error = new Error('Database is not connected!')
+			this.emit(DatabaseEvent.error, error)
+			throw error
 		}
 		const collection = this.database.collection(collectionName)
 		try {
 			return collection.insertOne(dataContent)
 		} catch (error) {
+			this.emit(DatabaseEvent.error, error)
 			throw error
 		}
 	}
@@ -106,12 +114,15 @@ export class Database {
 		condition: { [key: string]: any }
 	) {
 		if (this.client === void 0 || this.database === void 0) {
-			throw new Error('Database is not connected!')
+			const error = new Error('Database is not connected!')
+			this.emit(DatabaseEvent.error, error)
+			throw error
 		}
 		const collection = this.database.collection(collectionName)
 		try {
 			return collection.findOne(condition)
 		} catch (error) {
+			this.emit(DatabaseEvent.error, error)
 			throw error
 		}
 	}
@@ -122,12 +133,15 @@ export class Database {
 		dataContent: { [key: string]: any }
 	) {
 		if (this.client === void 0 || this.database === void 0) {
-			throw new Error('Database is not connected!')
+			const error = new Error('Database is not connected!')
+			this.emit(DatabaseEvent.error, error)
+			throw error
 		}
 		const collection = this.database.collection(collectionName)
 		try {
 			return collection.updateOne(condition, { $set: dataContent })
 		} catch (error) {
+			this.emit(DatabaseEvent.error, error)
 			throw error
 		}
 	}
@@ -137,26 +151,40 @@ export class Database {
 		condition: { [key: string]: any }
 	) {
 		if (this.client === void 0 || this.database === void 0) {
-			throw new Error('Database is not connected!')
+			const error = new Error('Database is not connected!')
+			this.emit(DatabaseEvent.error, error)
+			throw error
 		}
 		const collection = this.database.collection(collectionName)
 		try {
 			return collection.deleteOne(condition)
 		} catch (error) {
+			this.emit(DatabaseEvent.error, error)
 			throw error
 		}
 	}
 
 	public async runQuery(query: string) {
 		if (this.client === void 0 || this.database === void 0) {
-			throw new Error('Database is not connected!')
+			const error = new Error('Database is not connected!')
+			this.emit(DatabaseEvent.error, error)
+			throw error
 		}
 		try {
 			eval(query)
 		} catch (error) {
+			this.emit(DatabaseEvent.error, error)
 			throw error
 		}
 	}
+}
+
+export enum DatabaseEvent {
+	connect = "connect",
+	connected = "connected",
+	disconnect = "disconnect",
+	disconnected = "disconnected",
+	error = "error"
 }
 
 export default Database
