@@ -212,8 +212,6 @@ class DatabaseBenchmark extends EventEmitter{
 		}
 	}
 
-
-
 	private async runCreateBenchmark(
 		benchmarkRequest: ICreateBenchmarkRequest
 	) {
@@ -275,7 +273,10 @@ class DatabaseBenchmark extends EventEmitter{
 							const hrEnd = process.hrtime(hrStart)
 							if (hasCollectionFlowsConfig) {
 								for (const propertyKey in collectionFlowsConfig) {
-									if (collectionFlowsConfig.hasOwnProperty(propertyKey)) {
+									if (
+										collectionFlowsConfig.hasOwnProperty(propertyKey)
+										&& dataContent.hasOwnProperty(propertyKey)
+									) {
 										let propertyFlowsConfig = collectionFlowsConfig[propertyKey]
 										const validationResult = this.flowsConfig.validateFlowsConfig({
 											propertyKey, collectionName: collection
