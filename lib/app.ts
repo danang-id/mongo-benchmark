@@ -3,7 +3,7 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- *
+s *
  *    http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
@@ -16,20 +16,24 @@
 import fs from 'fs'
 import path from 'path'
 import program from 'commander'
+import { EventEmitter } from 'events'
 
 import config from './helpers/config'
 import { terminal, styles } from './helpers/terminal'
 import BenchmarkService from './services/DatabaseBenchmark'
+import { DatabaseEvent } from './services/Database'
+import { DatabaseBenchmarkEvent as BenchmarkEvent } from './services/DatabaseBenchmark'
 
-export class Application {
+export class Application extends EventEmitter{
 	private readonly DATABASES_DIRECTORY: fs.PathLike
-	private readonly APP_TITLE = 'MongoDB Benchmark'
 
 	constructor() {
+		super()
 		program
 			.description('MongoDB Benchmark CLI')
 			.version('1.0.0')
-			.option('-v, --verbose', 'verbose output')
+			.option('-v, --verbose', 'Verbose output')
+			.option('-e, --export', 'Export benchmark results on finish')
 		program.parse(process.argv)
 		this.DATABASES_DIRECTORY = config.isLoaded
 			? config.app.dataDirectory
@@ -50,11 +54,7 @@ export class Application {
 
 	private getDatabases() {
 		if (!this.isDatabasesDirectoryExist()) {
-			fs.mkdirSync(this.DATABASES_DIRECTORY)
-			terminal.print(
-				'Databases directory [./data] is not exist, created one.',
-				styles.red
-			)
+			return []
 		}
 		return <string[]>(
 			fs.readdirSync(this.DATABASES_DIRECTORY).filter(database => {
@@ -65,30 +65,39 @@ export class Application {
 		)
 	}
 
-	private async main() {
-		let databases: string[] = []
-		try {
-			databases = this.getDatabases()
-			if (databases.length <= 0) {
-				throw new Error(
-					'There is no database defined in databases directory [./data]'
-				)
-			}
-			terminal
-				.clear()
-				.center(' ' + this.APP_TITLE + ' ', '=', styles.bold)
-				.newLine(2)
-		} catch (error) {
-			throw error
+	private main() {
+		if (!this.isDatabasesDirectoryExist()) {
+			this.emit(ApplicationEvent.error, new Error('Data directory [' + this.DATABASES_DIRECTORY + '] is not exist.'))
+			return
 		}
-		let benchmarkService: BenchmarkService
-		for (const [index, database] of databases.entries()) {
-			benchmarkService = new BenchmarkService(
-				<string>this.DATABASES_DIRECTORY,
-				database
-			)
-			try {
-				await benchmarkService.runBenchmark()
+		const databases: string[] = this.getDatabases()
+		if (databases.length <= 0) {
+			this.emit(ApplicationEvent.error, new Error(
+				'There is no any database defined in data directory. Please check your data directory at ' + this.DATABASES_DIRECTORY + '.'
+			))
+			return
+		}
+		const benchmarkServices: { database: string, benchmarkService: BenchmarkService }[] = []
+		for (const database of databases) {
+			const benchmarkService = new BenchmarkService(<string>this.DATABASES_DIRECTORY, database)
+			benchmarkServices.push({database, benchmarkService})
+		}
+		for (const [index, {database, benchmarkService}] of benchmarkServices.entries()) {
+			const runningPrefix = 'Running benchmark: '
+			benchmarkService.addListener(BenchmarkEvent.benchmarkStart, (dataDirectory: string, hasFlowsConfig: boolean) => {
+				terminal.printLine(`Database [${database}]`, styles.bold)
+					.print('INFO: ', styles.bold.cyanBright)
+					.printLine('Database directory')
+					.printLine('      ' + dataDirectory)
+					.print('INFO: ', styles.bold.cyanBright)
+					.printLine(hasFlowsConfig
+						? 'Flows configuration is FOUND for this database. All read operations will be based on this configuration.'
+						: 'Flows configuration is NOT FOUND for this database. '
+					)
+					.newLine()
+					.print(runningPrefix + 'Preparing...')
+			})
+			benchmarkService.addListener(BenchmarkEvent.benchmarkDone, () => {
 				const benchmarkResults = benchmarkService.getBenchmarkResults()
 				if (benchmarkResults.isFinished) {
 					const operations = ['create', 'read', 'update', 'delete']
@@ -98,14 +107,26 @@ export class Application {
 						'[U] Update Operation',
 						'[D] Delete Operation'
 					]
-					terminal.printLine('RESULT:', styles.bold.underline)
+					const operationStyles = [
+						styles.bold.bgBlue.white,
+						styles.bold.bgWhite.black,
+						styles.bold.bgMagenta.white,
+						styles.bold.bgRed.white
+					]
+					terminal.printLine('Benchmark Result', styles.bold)
 					for (const [index, operation] of operations.entries()) {
 						// @ts-ignore
 						const collections = benchmarkResults[operation]
 						terminal.printLine(
 							operationHeaders[index],
-							styles.bold.yellow
+							operationStyles[index]
 						)
+						if (index === 1 && benchmarkResults.hasFlowsConfig) {
+							terminal
+								.print('|  ')
+								.print('INFO: ', styles.bold.cyanBright)
+								.printLine('Read operations is done according to flows configuration.')
+						}
 						let totalOperationCount = 0
 						let totalTimeUsed = 0
 						for (const collection in collections) {
@@ -117,11 +138,11 @@ export class Application {
 									.print(`|- `)
 									.printLine(
 										`Collection [${collection}]`,
-										styles.cyan
+										styles.underline.yellow
 									)
 								for (const { hrtime, id } of collections[
 									collection
-								]) {
+									]) {
 									collectionOperationCount++
 									const time = parseFloat(
 										`${hrtime[0]}.${hrtime[1]}`
@@ -155,45 +176,118 @@ export class Application {
 							)
 					}
 				}
-			} catch (error) {
-				terminal.printLine('ERROR: ' + error.message, styles.red)
-				if (program.verbose) {
-					console.error(error)
-				}
-			} finally {
 				benchmarkService.finishBenchmark()
-				if (index !== databases.length - 1) {
-					terminal.newLine()
-				}
-			}
-		}
-	}
-
-	public static start() {
-		const app = new Application()
-		app.main()
-			.catch(error => {
-				terminal
-					.newLine()
-					.print('ERROR: ', styles.bold.red)
-					.printLine(error.message, styles.bold)
+			})
+			benchmarkService.addListener(BenchmarkEvent.benchmarkError, (error: Error) => {
+				terminal.clearLine().print('ERROR: ', styles.bold.red)
+					.printLine(error.message)
 				if (program.verbose) {
 					console.error(error)
 				}
 			})
-			.finally(Application.exit)
+			benchmarkService.addListener(BenchmarkEvent.benchmarkFinish, (success: boolean, benchmarkResults, exportPath: string) => {
+				terminal.newLine().print('INFO: ', styles.bold.cyanBright).print(success
+					? `Benchmark finished.`
+					: `Benchmark ended due to error.`
+				)
+				if (success) {
+					terminal.newLine()
+				} else {
+					if (program.verbose) {
+						terminal.newLine()
+					} else {
+						terminal.printLine(' Please use --verbose option to see detailed output about the error.')
+					}
+				}
+				if (program.export) {
+					if (fs.existsSync(exportPath)) {
+						fs.unlinkSync(exportPath)
+					}
+					fs.writeFileSync(exportPath, JSON.stringify(benchmarkResults))
+					terminal.print('INFO: ', styles.bold.cyanBright)
+						.printLine('Benchmark results has been exported.')
+						.printLine('      Please check inside your data directory.')
+				}
+				if (index !== databases.length - 1) {
+					terminal.newLine().center('', '-').newLine(2)
+					const nextBenchmarkService = benchmarkServices[index + 1].benchmarkService
+					nextBenchmarkService.runBenchmark()
+				} else {
+					this.emit(ApplicationEvent.finished)
+				}
+			})
+			benchmarkService.addListener(BenchmarkEvent.operationDone, (collection: string, result: string, filename: string, resultData: { [key: string]: any }) => {
+				if (program.export) {
+					benchmarkService.writeResultToFile(collection, result, filename, resultData)
+				}
+			})
+			benchmarkService.addDatabaseServiceEventListener(DatabaseEvent.connect, () => {
+				terminal.clearLine().print(runningPrefix + 'Connecting to database...')
+			})
+			benchmarkService.addDatabaseServiceEventListener(DatabaseEvent.connected, () => {
+				terminal.clearLine().print(runningPrefix + 'Running benchmark operations...')
+			})
+			benchmarkService.addDatabaseServiceEventListener(DatabaseEvent.disconnect, () => {
+				terminal.clearLine().print(runningPrefix + 'Closing connection to database...')
+			})
+			benchmarkService.addDatabaseServiceEventListener(DatabaseEvent.disconnected, () => {
+				terminal.clearLine()
+			})
+			benchmarkService.addDatabaseServiceEventListener(DatabaseEvent.error, () => {
+				terminal.clearLine()
+			})
+		}
+		benchmarkServices[0].benchmarkService.runBenchmark()
+	}
+
+	public static start() {
+		terminal
+			.clear()
+			.newLine()
+			.center('', ' ', styles.bgYellow)
+			.newLine(2)
+			.center(' Mongo Benchmark ', ' ', styles.bold.blue)
+			.newLine()
+			.center('[ v0.1.1-alpha ]', ' ')
+			.newLine(2)
+			.center('', ' ', styles.bgYellow)
+			.newLine(2)
+		const app = new Application()
+		app.on(ApplicationEvent.error, (error: Error) => {
+			terminal
+				.print('ERROR: ', styles.bold.red)
+				.printLine(error.message)
+			if (program.verbose) {
+				console.error(error)
+			}
+			app.emit(ApplicationEvent.finished)
+		})
+		app.on(ApplicationEvent.finished, Application.exit)
+		app.main()
 	}
 
 	public static exit() {
+		const year = (new Date()).getFullYear()
 		terminal
 			.newLine()
-			.center('', '=', styles.bold)
+			.center('', '-')
 			.newLine(2)
-			.print('Press any key to exit')
+			.center('\u00A9 ' + year + ' Danang Galuh Tegar Prasetyo', ' ', styles.bold)
+			.newLine()
+			.center('https://danang-id.github.io/mongo-benchmark')
 			.newLine(2)
+			.center('', ' ', styles.bgYellow)
+			.newLine(2)
+			.print('Please press ENTER / RETURN to exit...')
+			.newLine()
 		process.stdin.resume()
 		process.stdin.on('data', () => {
 			process.exit()
 		})
 	}
+}
+
+enum ApplicationEvent {
+	error = 'error',
+	finished = 'finished'
 }
