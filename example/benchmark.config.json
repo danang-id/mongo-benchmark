@@ -1,0 +1,8 @@
+{
+    "app": {
+        "dataDirectory": "D:\\mongo-benchmark\\data"
+    },
+    "database": {
+        "uriString": "mongodb://localhost:27017/test?retryWrites=true"
+    }
+}
