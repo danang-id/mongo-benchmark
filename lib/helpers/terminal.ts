@@ -14,11 +14,14 @@
  */
 
 import chalk from 'chalk'
+import readline from 'readline'
 
 class Terminal implements ITerminal {
+	private readonly stdin: NodeJS.ReadStream
 	private readonly stdout: NodeJS.WriteStream
 
-	constructor(stdout: NodeJS.WriteStream) {
+	constructor(stdin: NodeJS.ReadStream, stdout: NodeJS.WriteStream) {
+		this.stdin = stdin
 		this.stdout = stdout
 	}
 
@@ -32,6 +35,12 @@ class Terminal implements ITerminal {
 
 	public printLine(text: string, styler?: TerminalStyler): Terminal {
 		return this.print(text, styler).newLine()
+	}
+
+	public clearLine() {
+		readline.clearLine(this.stdout, 0)
+		readline.cursorTo(this.stdout, 0)
+		return this
 	}
 
 	public center(
@@ -71,12 +80,25 @@ class Terminal implements ITerminal {
 		this.stdout.write(Buffer.from('\u001b[2J\u001b[0;0H'))
 		return this
 	}
+
+	public async ask(question: string): Promise<string> {
+		const readlineInterface = readline.createInterface({
+			input: this.stdin,
+			output: this.stdout
+		})
+		return new Promise((resolve) => {
+			readlineInterface.question(question, answer => {
+				readlineInterface.close()
+				resolve(answer)
+			})
+		})
+	}
 }
 
 export function createTerminal(options: ITerminalOptions = {}) {
+	const stdin = options.stdin ? options.stdin : process.stdin
 	const stdout = options.stdout ? options.stdout : process.stdout
-	const terminal = new Terminal(stdout)
-	return terminal
+	return new Terminal(stdin, stdout)
 }
 
 export const terminal = createTerminal()
@@ -86,6 +108,7 @@ export const styles = chalk
 interface ITerminal {
 	print: (text: string, styler?: TerminalStyler) => Terminal
 	printLine: (text: string, styler?: TerminalStyler) => Terminal
+	clearLine: () => Terminal
 	center: (
 		text: string,
 		wingCharacter?: string,
@@ -93,9 +116,11 @@ interface ITerminal {
 	) => Terminal
 	newLine: (line?: number) => Terminal
 	clear: () => Terminal
+	ask: (question: string) => Promise<string>
 }
 
 interface ITerminalOptions {
+	stdin?: NodeJS.ReadStream
 	stdout?: NodeJS.WriteStream
 }
 
