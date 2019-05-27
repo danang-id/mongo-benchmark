@@ -10,7 +10,7 @@ Benchmark a set of collection schemas by testing CRUD speed.
 
 To use this app, there are few steps you need to do.
 
- 1. Download the latest build of this program at the [release](https://github.com/danang-id/mongo-benchmark/release) page.
+ 1. Download the latest build of this program at the [release](https://github.com/danang-id/mongo-benchmark/releases) page.
  2. Unzip your downloaded file.
  3. Open `benchmark.config.json` file, and make sure your configuration satisfy your needs. The configuration follows [these rules](#configuration).
  4. Also make sure that your data directory (the one defined in `benchmark.config.json` > `app` > `dataDirectory`) satisfy your needs; and it's structure follows [these rules](#data-directory).
@@ -80,7 +80,7 @@ The value of `refCollection`, `findById`, and `findOne` may have special variabl
  
 When the return value of variable is an object (for example `{row}`), you may specify the property you'd like to return like this `{row.column_first}`.
 
-Below is an example of flows configuration file.
+An example of flows configuration file available on [example](example) directory. The example will be like follows.
 
  ```json
 {
@@ -196,7 +196,18 @@ The configuration file consist of these settings.
 }
 ```
 
-Example of the configuration file is provided [here](example/benchmark.config.json).
+An example of the configuration file available on [example](example) directory. The example will be like follows.
+
+ ```json
+{
+    "app": {
+        "dataDirectory": "D:\\mongo-benchmark\\data"
+    },
+    "database": {
+        "uriString": "mongodb://localhost:27017/test?retryWrites=true"
+    }
+}
+```
 
 ## Contribution
 
