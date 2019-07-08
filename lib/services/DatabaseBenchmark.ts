@@ -29,19 +29,9 @@ class DatabaseBenchmark extends EventEmitter{
 	private readonly flowsConfig: Flows
 	private readonly benchmarkResults: IBenchmarkResults
 	private readonly writtenResults: string[]
-	private readonly benchmarkToRun: { 
-		create: boolean,
-		read: boolean, 
-		update: boolean,
-		delete: boolean
-	}
+	private readonly benchmarkOptions: IBenchmarkOptions
 
-	constructor(dataDirectory: string, databaseName: string, benchmarkToRun: { 
-		create: boolean,
-		read: boolean, 
-		update: boolean,
-		delete: boolean
-	}) {
+	constructor(dataDirectory: string, databaseName: string, benchmarkOptions: IBenchmarkOptions) {
 		super()
 		this.DATABASE_NAME = databaseName
 		this.DATABASE_SERVICE = new DatabaseService(this.DATABASE_NAME)
@@ -56,7 +46,7 @@ class DatabaseBenchmark extends EventEmitter{
 			hasFlowsConfig: this.flowsConfig.hasFlowsJSON
 		}
 		this.writtenResults = []
-		this.benchmarkToRun = benchmarkToRun
+		this.benchmarkOptions = benchmarkOptions
 		this.addDatabaseServiceEventListener(DatabaseEvent.error, (error: Error) => {
 			this.emit(DatabaseBenchmarkEvent.benchmarkError, error)
 		})
@@ -465,7 +455,9 @@ class DatabaseBenchmark extends EventEmitter{
 			// Connect database
 			await this.DATABASE_SERVICE.connect()
 			// Drop database
-			await this.DATABASE_SERVICE.drop()
+			if (this.benchmarkOptions.dropDatabase) {
+				await this.DATABASE_SERVICE.drop()
+			}
 			// Prepare create benchmark
 			const dataSets = this.getDataSets()
 			for (const collection in dataSets) {
@@ -485,7 +477,7 @@ class DatabaseBenchmark extends EventEmitter{
 				}
 			}
 			// Run create benchmark
-			if (this.benchmarkToRun.create) {
+			if (this.benchmarkOptions.benchmarkToRun.create) {
 				this.benchmarkResults.create = await this.runCreateBenchmark(
 					benchmarkRequests.create
 				)
@@ -521,19 +513,19 @@ class DatabaseBenchmark extends EventEmitter{
 				}
 			}
 			// Run read benchmark
-			if (this.benchmarkToRun.create && this.benchmarkToRun.read) {
+			if (this.benchmarkOptions.benchmarkToRun.create && this.benchmarkOptions.benchmarkToRun.read) {
 				this.benchmarkResults.read = await this.runReadBenchmark(
 					benchmarkRequests.read
 				)
 			}
 			// Run update benchmark
-			if (this.benchmarkToRun.create && this.benchmarkToRun.update) {
+			if (this.benchmarkOptions.benchmarkToRun.create && this.benchmarkOptions.benchmarkToRun.update) {
 				this.benchmarkResults.update = await this.runUpdateBenchmark(
 					benchmarkRequests.update
 				)
 			}
 			// Run delete benchmark
-			if (this.benchmarkToRun.create && this.benchmarkToRun.delete) {
+			if (this.benchmarkOptions.benchmarkToRun.create && this.benchmarkOptions.benchmarkToRun.delete) {
 				this.benchmarkResults.delete = await this.runDeleteBenchmark(
 					benchmarkRequests.delete
 				)
@@ -597,6 +589,16 @@ export enum DatabaseBenchmarkEvent {
 export interface ICollectionDataSet {
 	createDataPath: string
 	updateDataPath: string
+}
+
+export interface IBenchmarkOptions {
+	dropDatabase: boolean
+	benchmarkToRun: {
+		create: boolean,
+		read: boolean,
+		update: boolean,
+		delete: boolean
+	}
 }
 
 export interface ICollectionCreateBenchmarkRequest {

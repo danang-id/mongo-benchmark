@@ -34,6 +34,7 @@ export class Application extends EventEmitter {
 			.version('1.0.0')
 			.option('-v, --verbose', 'Verbose output')
 			.option('-e, --export', 'Export benchmark results on finish')
+			.option('-d, --dropDatabase', 'Drop database before benchmark.')
 			.option('--nocreate', 'Do not run create benchmark')
 			.option('--noread', 'Do not run read benchmark')
 			.option('--noupdate', 'Do not run update benchmark')
@@ -82,17 +83,20 @@ export class Application extends EventEmitter {
 			return
 		}
 		const benchmarkServices: { database: string, benchmarkService: BenchmarkService }[] = []
-		const benchmarkToRun = {
-			create: program.nocreate === true ? false : true,
-			read: program.noread === true ? false : true,
-			update: program.noupdate === true ? false : true,
-			delete: program.nodelete === true ? false : true,
+		const benchmarkOptions = {
+			dropDatabase: program.dropDatabase === true,
+			benchmarkToRun: {
+				create: program.nocreate !== true,
+				read: program.noread !== true,
+				update: program.noupdate !== true,
+				delete: program.nodelete !== true,
+			}
 		}
 		for (const database of databases) {
 			const benchmarkService = new BenchmarkService(
 				<string>this.DATABASES_DIRECTORY,
 				database,
-				benchmarkToRun
+				benchmarkOptions
 			)
 			benchmarkServices.push({database, benchmarkService})
 		}
@@ -127,11 +131,11 @@ export class Application extends EventEmitter {
 						styles.bold.bgMagenta.white,
 						styles.bold.bgRed.white
 					]
-					const operationRuns = [ 
-						benchmarkToRun.create,
-						benchmarkToRun.read,
-						benchmarkToRun.update,
-						benchmarkToRun.delete
+					const operationRuns = [
+						benchmarkOptions.benchmarkToRun.create,
+						benchmarkOptions.benchmarkToRun.read,
+						benchmarkOptions.benchmarkToRun.update,
+						benchmarkOptions.benchmarkToRun.delete
 					]
 					terminal.printLine('Benchmark Result', styles.bold)
 					for (const [index, operation] of operations.entries()) {
