@@ -24,7 +24,7 @@ import BenchmarkService from './services/DatabaseBenchmark'
 import { DatabaseEvent } from './services/Database'
 import { DatabaseBenchmarkEvent as BenchmarkEvent } from './services/DatabaseBenchmark'
 
-export class Application extends EventEmitter{
+export class Application extends EventEmitter {
 	private readonly DATABASES_DIRECTORY: fs.PathLike
 
 	constructor() {
@@ -34,6 +34,10 @@ export class Application extends EventEmitter{
 			.version('1.0.0')
 			.option('-v, --verbose', 'Verbose output')
 			.option('-e, --export', 'Export benchmark results on finish')
+			.option('--nocreate', 'Do not run create benchmark')
+			.option('--noread', 'Do not run read benchmark')
+			.option('--noupdate', 'Do not run update benchmark')
+			.option('--nodelete', 'Do not run delete benchmark')
 		program.parse(process.argv)
 		this.DATABASES_DIRECTORY = config.isLoaded
 			? config.app.dataDirectory
@@ -78,8 +82,18 @@ export class Application extends EventEmitter{
 			return
 		}
 		const benchmarkServices: { database: string, benchmarkService: BenchmarkService }[] = []
+		const benchmarkToRun = {
+			create: program.nocreate === true ? false : true,
+			read: program.noread === true ? false : true,
+			update: program.noupdate === true ? false : true,
+			delete: program.nodelete === true ? false : true,
+		}
 		for (const database of databases) {
-			const benchmarkService = new BenchmarkService(<string>this.DATABASES_DIRECTORY, database)
+			const benchmarkService = new BenchmarkService(
+				<string>this.DATABASES_DIRECTORY,
+				database,
+				benchmarkToRun
+			)
 			benchmarkServices.push({database, benchmarkService})
 		}
 		for (const [index, {database, benchmarkService}] of benchmarkServices.entries()) {
@@ -113,6 +127,12 @@ export class Application extends EventEmitter{
 						styles.bold.bgMagenta.white,
 						styles.bold.bgRed.white
 					]
+					const operationRuns = [ 
+						benchmarkToRun.create,
+						benchmarkToRun.read,
+						benchmarkToRun.update,
+						benchmarkToRun.delete
+					]
 					terminal.printLine('Benchmark Result', styles.bold)
 					for (const [index, operation] of operations.entries()) {
 						// @ts-ignore
@@ -121,59 +141,80 @@ export class Application extends EventEmitter{
 							operationHeaders[index],
 							operationStyles[index]
 						)
-						if (index === 1 && benchmarkResults.hasFlowsConfig) {
-							terminal
-								.print('|  ')
-								.print('INFO: ', styles.bold.cyanBright)
-								.printLine('Read operations is done according to flows configuration.')
-						}
-						let totalOperationCount = 0
-						let totalTimeUsed = 0
-						for (const collection in collections) {
-							if (collections.hasOwnProperty(collection)) {
-								let collectionOperationCount = 0
-								let collectionTimeUsed = 0
-								let collectionAverageTimeUsed = 0
+						if (operationRuns[index]) {
+							if (index === 1 && benchmarkResults.hasFlowsConfig) {
 								terminal
-									.print(`|- `)
-									.printLine(
-										`Collection [${collection}]`,
-										styles.underline.yellow
-									)
-								for (const { hrtime, id } of collections[
-									collection
-									]) {
-									collectionOperationCount++
-									const time = parseFloat(
-										`${hrtime[0]}.${hrtime[1]}`
+									.print('|  ')
+									.print('INFO: ', styles.bold.cyanBright)
+									.printLine('Read operations is done according to flows configuration.')
+							}
+							let totalOperationCount = 0
+							let totalTimeUsed = 0
+							for (const collection in collections) {
+								if (collections.hasOwnProperty(collection)) {
+									let collectionOperationCount = 0
+									let collectionTimeUsed = 0
+									let collectionAverageTimeUsed = 0
+									terminal
+										.print(`|- `)
+										.printLine(
+											`Collection [${collection}]`,
+											styles.underline.yellow
+										)
+									for (const { hrtime, id } of collections[
+										collection
+										]) {
+										collectionOperationCount++
+										const time = parseFloat(
+											`${hrtime[0]}.${hrtime[1]}`
+										)
+										terminal.printLine(
+											`|    | ${id} | ${time} second(s)`
+										)
+										collectionTimeUsed += time
+									}
+									collectionAverageTimeUsed =
+										collectionTimeUsed /
+										collectionOperationCount
+									terminal.printLine(
+										`|  Collection Data Count : ${collectionOperationCount}`
 									)
 									terminal.printLine(
-										`|    | ${id} | ${time} second(s)`
+										`|  Operation Time        : ${collectionTimeUsed} second(s)`
 									)
-									collectionTimeUsed += time
+									terminal.printLine(
+										`|  Avg Operation Time    : ${collectionAverageTimeUsed} second(s)`
+									)
+									totalOperationCount += collectionOperationCount
+									totalTimeUsed += collectionTimeUsed
 								}
-								collectionAverageTimeUsed =
-									collectionTimeUsed /
-									collectionOperationCount
-								terminal.printLine(
-									`|  Collection Data Count : ${collectionOperationCount}`
-								)
-								terminal.printLine(
-									`|  Operation Time        : ${collectionTimeUsed} second(s)`
-								)
-								terminal.printLine(
-									`|  Avg Operation Time    : ${collectionAverageTimeUsed} second(s)`
-								)
-								totalOperationCount += collectionOperationCount
-								totalTimeUsed += collectionTimeUsed
 							}
+							terminal
+								.print(`|- `)
+								.printLine(
+									`Finished ${totalOperationCount} ${operation} operation(s) within ${totalTimeUsed} second(s)`,
+									styles.green
+								)
+						} else {
+							let message = '';
+							switch(index) {
+								case 0:
+									message = 'Create operation has been skiped by the user using --nocreate option.'
+									break;
+								case 1:
+									message = 'Read operation has been skiped by the user using --noread option.'
+									break;
+								case 2:
+									message = 'Update operation has been skiped by the user using --noupdate option.'
+									break;
+								case 3:
+									message = 'Delete operation has been skiped by the user using --nodelete option.'
+									break;
+							}
+							terminal
+								.print('INFO: ', styles.bold.cyanBright)
+								.printLine(message)
 						}
-						terminal
-							.print(`|- `)
-							.printLine(
-								`Finished ${totalOperationCount} ${operation} operation(s) within ${totalTimeUsed} second(s)`,
-								styles.green
-							)
 					}
 				}
 				benchmarkService.finishBenchmark()

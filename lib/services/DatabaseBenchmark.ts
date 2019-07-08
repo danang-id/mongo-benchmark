@@ -29,8 +29,19 @@ class DatabaseBenchmark extends EventEmitter{
 	private readonly flowsConfig: Flows
 	private readonly benchmarkResults: IBenchmarkResults
 	private readonly writtenResults: string[]
+	private readonly benchmarkToRun: { 
+		create: boolean,
+		read: boolean, 
+		update: boolean,
+		delete: boolean
+	}
 
-	constructor(dataDirectory: string, databaseName: string) {
+	constructor(dataDirectory: string, databaseName: string, benchmarkToRun: { 
+		create: boolean,
+		read: boolean, 
+		update: boolean,
+		delete: boolean
+	}) {
 		super()
 		this.DATABASE_NAME = databaseName
 		this.DATABASE_SERVICE = new DatabaseService(this.DATABASE_NAME)
@@ -45,6 +56,7 @@ class DatabaseBenchmark extends EventEmitter{
 			hasFlowsConfig: this.flowsConfig.hasFlowsJSON
 		}
 		this.writtenResults = []
+		this.benchmarkToRun = benchmarkToRun
 		this.addDatabaseServiceEventListener(DatabaseEvent.error, (error: Error) => {
 			this.emit(DatabaseBenchmarkEvent.benchmarkError, error)
 		})
@@ -473,9 +485,11 @@ class DatabaseBenchmark extends EventEmitter{
 				}
 			}
 			// Run create benchmark
-			this.benchmarkResults.create = await this.runCreateBenchmark(
-				benchmarkRequests.create
-			)
+			if (this.benchmarkToRun.create) {
+				this.benchmarkResults.create = await this.runCreateBenchmark(
+					benchmarkRequests.create
+				)
+			}
 			// Prepare read, update, and delete benchmark
 			for (const collection in this.benchmarkResults.create) {
 				if (this.benchmarkResults.create.hasOwnProperty(collection)) {
@@ -507,17 +521,23 @@ class DatabaseBenchmark extends EventEmitter{
 				}
 			}
 			// Run read benchmark
-			this.benchmarkResults.read = await this.runReadBenchmark(
-				benchmarkRequests.read
-			)
+			if (this.benchmarkToRun.create && this.benchmarkToRun.read) {
+				this.benchmarkResults.read = await this.runReadBenchmark(
+					benchmarkRequests.read
+				)
+			}
 			// Run update benchmark
-			this.benchmarkResults.update = await this.runUpdateBenchmark(
-				benchmarkRequests.update
-			)
+			if (this.benchmarkToRun.create && this.benchmarkToRun.update) {
+				this.benchmarkResults.update = await this.runUpdateBenchmark(
+					benchmarkRequests.update
+				)
+			}
 			// Run delete benchmark
-			this.benchmarkResults.delete = await this.runDeleteBenchmark(
-				benchmarkRequests.delete
-			)
+			if (this.benchmarkToRun.create && this.benchmarkToRun.delete) {
+				this.benchmarkResults.delete = await this.runDeleteBenchmark(
+					benchmarkRequests.delete
+				)
+			}
 			// Set benchmark results as finished and return it
 			this.benchmarkResults.isFinished = true
 		} catch (error) {
